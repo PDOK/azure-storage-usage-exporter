@@ -2,9 +2,12 @@ package agg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/tobshub/go-sortedmap"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/marcboeker/go-duckdb" // duckdb sql driver
@@ -16,34 +19,43 @@ import (
 
 const (
 	runDatePathFormat = "2006/01/02/15-04-05"
-	other             = "OTHER"
+)
+
+const (
+	Container  = "container"
+	Owner      = "owner"
+	Dataset    = "dataset"
+	Deleted    = "deleted"
+	OtherValue = "OTHER"
 )
 
 var (
 	blobInventoryFileRunMatchPattern = regroup.MustCompile(`^(?P<date>\d{4}/\d{2}/\d{2}/\d{2}-\d{2}-\d{2})/(?P<rule>[^/]+)/[^_]+_\d+_\d+.parquet$`)
 	otherAggregationGroup            = AggregationGroup{
-		Container: other,
-		Owner:     other,
-		Dataset:   other,
+		Container: OtherValue,
+		Owner:     OtherValue,
+		Dataset:   OtherValue,
 	}
 )
 
 type Aggregator struct {
-	AzureStorageConnectionString string
-	BlobInventoryContainer       string
-	Rules                        []AggregationRule
+	azureStorageConnectionString string
+	blobInventoryContainer       string
+	rules                        []AggregationRule
 }
 
+// TODO maybe refactor to not have hard coded labels
 type AggregationGroup struct {
 	Container string `yaml:"container,omitempty" regroup:"container"`
 	Owner     string `yaml:"owner,omitempty" regroup:"owner"`
 	Dataset   string `yaml:"dataset,omitempty" regroup:"dataset"`
+	Deleted   bool   `yaml:"deleted,omitempty"`
 }
 
 // StorageUsage is storage usage/size in bytes
-type StorageUsage int64
+type StorageUsage = int64
 
-type AggregationResult map[AggregationGroup]StorageUsage
+type AggregationResults = *sortedmap.SortedMap[AggregationGroup, StorageUsage]
 
 // AggregationRule is matched to a blob's path (including container/bucket, without filename, maximum X levels deep).
 // If it matches, the named groups from the regex pattern or the defaults from the AggregationGroup are used
@@ -60,26 +72,38 @@ type duRow struct {
 	Count   int64        `db:"cnt"`
 }
 
-type rulesRanByDate map[time.Time][]string
+type rulesRanByDate = map[time.Time][]string
 
-func (a *Aggregator) Aggregate() (AggregationResult, error) {
+func NewAggregator(azureStorageConnectionString, blobInventoryContainer string, aggregationRules []AggregationRule) *Aggregator {
+	return &Aggregator{
+		azureStorageConnectionString: azureStorageConnectionString,
+		blobInventoryContainer:       blobInventoryContainer,
+		rules:                        aggregationRules,
+	}
+}
+
+func (a *Aggregator) Aggregate(minimalLastRunDate time.Time) (aggregationResults AggregationResults, lastRunDate time.Time, err error) {
 	rulesRanByDate, err := a.findRuns()
 	if err != nil {
-		return nil, err
+		return
 	}
 	lastRunDate, found := getLastRunDate(rulesRanByDate)
 	if !found {
-		return nil, nil
+		err = errors.New("no last run date found")
+		return
 	}
-	aggregationResult, err := a.doTheWork(lastRunDate)
+	if !lastRunDate.After(minimalLastRunDate) {
+		err = errors.New("last run date is too old")
+		return
+	}
+	aggregationResults, err = a.aggregateRun(lastRunDate)
 	if err != nil {
-		return nil, err
+		return
 	}
-
-	return aggregationResult, nil
+	return
 }
 
-func (a *Aggregator) doTheWork(runDate time.Time) (AggregationResult, error) {
+func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error) {
 	db, err := sqlx.Connect("duckdb", "")
 	if err != nil {
 		return nil, err
@@ -101,14 +125,16 @@ func (a *Aggregator) doTheWork(runDate time.Time) (AggregationResult, error) {
 	ORDER BY bytes DESC
 	LIMIT 100000 -- sanity limit
 	`
-	parquetWildcardPath := fmt.Sprintf("az://%s/%s/%s/*.parquet", a.BlobInventoryContainer, runDate.Format(runDatePathFormat), "*")
+	parquetWildcardPath := fmt.Sprintf("az://%s/%s/%s/*.parquet", a.blobInventoryContainer, runDate.Format(runDatePathFormat), "*")
 	rows, err := db.Queryx(duQuery, parquetWildcardPath)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	aggregationResult := make(AggregationResult)
+	aggregationResult := sortedmap.New[AggregationGroup, StorageUsage](0, func(i, j StorageUsage) bool {
+		return i > j // desc
+	})
 	var row duRow
 	for rows.Next() {
 		err = rows.StructScan(&row)
@@ -116,30 +142,33 @@ func (a *Aggregator) doTheWork(runDate time.Time) (AggregationResult, error) {
 			return nil, err
 		}
 		aggregationGroup := a.applyRulesToAggregate(row)
-		// TODO something with deleted
-		aggregationResult[aggregationGroup] += row.Bytes
+		soFar, _ := aggregationResult.Get(aggregationGroup)
+		aggregationResult.Insert(aggregationGroup, soFar)
 	}
 
 	return aggregationResult, nil
 }
 
 func (a *Aggregator) applyRulesToAggregate(row duRow) AggregationGroup {
-	for _, aggregationRule := range a.Rules {
+	for _, aggregationRule := range a.rules {
 		aggregationGroup := &AggregationGroup{}
 		err := aggregationRule.Pattern.MatchToTarget(row.Dir, aggregationGroup)
 		if err != nil {
 			continue
 		}
 		aggregationGroup.applyRuleDefaults(aggregationRule)
+		if row.Deleted != nil && *row.Deleted {
+			aggregationGroup.Deleted = true
+		}
 		return *aggregationGroup
 	}
 	return otherAggregationGroup
 }
 
 func (ag *AggregationGroup) applyRuleDefaults(rule AggregationRule) {
-	ag.Container = defaultStr(defaultStr(ag.Container, rule.Container), other)
-	ag.Owner = defaultStr(defaultStr(ag.Owner, rule.Owner), other)
-	ag.Dataset = defaultStr(defaultStr(ag.Dataset, rule.Dataset), other)
+	ag.Container = defaultStr(defaultStr(ag.Container, rule.Container), OtherValue)
+	ag.Owner = defaultStr(defaultStr(ag.Owner, rule.Owner), OtherValue)
+	ag.Dataset = defaultStr(defaultStr(ag.Dataset, rule.Dataset), OtherValue)
 }
 
 func (a *Aggregator) initDB(db *sqlx.DB) error {
@@ -148,7 +177,7 @@ func (a *Aggregator) initDB(db *sqlx.DB) error {
 					LOAD azure;
 					SET azure_transport_option_type = 'curl'; -- fixes cert issues
 					CREATE SECRET az (TYPE AZURE, PROVIDER CONFIG, CONNECTION_STRING '%s');`
-	azInitQuery = fmt.Sprintf(azInitQuery, a.AzureStorageConnectionString) // FIXME db.NamedExec
+	azInitQuery = fmt.Sprintf(azInitQuery, a.azureStorageConnectionString) // FIXME db.NamedExec
 	if _, err := db.Exec(azInitQuery); err != nil {
 		return err
 	}
@@ -165,11 +194,11 @@ func (a *Aggregator) initDB(db *sqlx.DB) error {
 }
 
 func (a *Aggregator) findRuns() (rulesRanByDate, error) {
-	blobClient, err := azblob.NewClientFromConnectionString(a.AzureStorageConnectionString, nil)
+	blobClient, err := azblob.NewClientFromConnectionString(a.azureStorageConnectionString, nil)
 	if err != nil {
 		return nil, err
 	}
-	pager := blobClient.NewListBlobsFlatPager(a.BlobInventoryContainer, nil)
+	pager := blobClient.NewListBlobsFlatPager(a.blobInventoryContainer, nil)
 	rulesRanByDate := make(map[time.Time][]string)
 	for pager.More() {
 		page, err := pager.NextPage(context.TODO())
