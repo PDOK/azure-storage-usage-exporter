@@ -61,7 +61,9 @@ var (
 
 func main() {
 	app := cli.NewApp()
-	app.Name = "PDOK Storage Usage Exporter"
+	app.HelpName = "Azure Storage Usage Exporter"
+	app.Name = "azure-storage-usage-exporter"
+	app.Usage = "Aggregates an Azure Blob Inventory Report and export as Prometheus metrics"
 	app.Flags = cliFlags
 	app.Action = func(c *cli.Context) error {
 		aggregator, err := createAggregatorFromCliCtx(c)

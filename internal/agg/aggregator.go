@@ -63,8 +63,8 @@ type AggregationResults = *sortedmap.SortedMap[AggregationGroup, StorageUsage]
 // If it matches, the named groups from the regex pattern or the defaults from the AggregationGroup are used
 // to aggregate the blob's size cq storage usage.
 type AggregationRule struct {
-	AggregationGroup
-	Pattern ReGroup `yaml:"pattern"`
+	AggregationGroup `yaml:",inline"`
+	Pattern          ReGroup `yaml:"pattern"`
 }
 
 type duRow struct {

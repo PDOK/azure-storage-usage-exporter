@@ -1,4 +1,4 @@
-# PDOK storage usage exporter
+# Azure storage usage exporter
 
 [![Build](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/build-and-publish-image.yml/badge.svg)](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/build-and-publish-image.yml)
 [![Lint (go)](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/lint-go.yml/badge.svg)](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/lint-go.yml)
@@ -8,7 +8,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/pdok/azure-storage-usage-exporter.svg)](https://hub.docker.com/r/pdok/azure-storage-usage-exporter)
 
 This app generates and exports/exposes statistics about cloud storage usage.
-It is tailored to PDOK's use case:
+It is initially tailored to PDOK's use case:
 
 * The cloud storage is [Azure Blob storage](https://azure.microsoft.com/en-us/products/storage/blobs). 
 * Usage concerns (current) occupation, not transactions.
@@ -28,11 +28,30 @@ docker build .
 
 ## Run
 
-ToDo
+```text
+USAGE:
+   azure-storage-usage-exporter [global options] command [command options] 
 
-### Configuration file
+COMMANDS:
+   help, h  Shows a list of commands or help for one command
 
-ToDo
+GLOBAL OPTIONS:
+   --azure-storage-connection-string value  Connection string for connecting to the Azure blob storage that holds the inventory [$AZURE_STORAGE_CONNECTION_STRING]
+   --bind-address value                     The TCP network address addr that is listened on. (default: ":8080") [$BIND_ADDRESS]
+   --blob-inventory-container value         Name of the container that holds the inventory (default: "blob-inventory") [$BLOB_INVENTORY_CONTAINER]
+   --extra-rules-file value                 File to read extra rules from (they will come before the default rules) [$EXTRA_RULES_FILE]
+   --help, -h                               show help
+```
+
+### Extra rules file
+
+Example of extra rules file contents:
+
+```yaml
+- pattern: ^(?P<container>special)/(?P<owner>[^/]+)/.+)
+  dataset: my-dataset # constant arbitrary _dataset_ label overrides dataset group from regex (could be left out of pattern)
+- pattern: ^(?P<container>[^/]+)/(?P<owner>[^/]+)/(?P<dataset>[^/]+)
+```
 
 ### Observability
 
