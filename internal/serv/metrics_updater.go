@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"log"
 	"strconv"
 	"time"
 
@@ -46,18 +47,24 @@ func NewMetricsUpdater(aggregator *agg.Aggregator, metricNamespace, metricSubsys
 }
 
 func (ms *MetricsUpdater) UpdatePromMetrics() error {
+	log.Printf("start updating metrics. last run was %s", ms.lastRunDate)
 	aggregationResults, lastRunDate, err := ms.aggregator.Aggregate(ms.lastRunDate)
 	if err != nil {
 		if lastRunDate.Equal(ms.lastRunDate) {
-			return nil // no update
+			log.Print("no newer blob inventory fun found")
+			return nil
 		}
 		return err
 	}
 
+	log.Print("start setting metrics")
 	ms.lastRunDate = lastRunDate
 	ms.lastRunDateMetric.Set(float64(lastRunDate.UnixNano()) / 1e9)
 	ms.storageUsageGauge.Reset()
 
+	if aggregationResults.Len() > ms.limit {
+		log.Printf("(metrics count will be limited to %d (of %d)", ms.limit, aggregationResults.Len())
+	}
 	i := 0
 	aggregationResults.IterFunc(false, func(rec sortedmap.Record[agg.AggregationGroup, agg.StorageUsage]) bool {
 		// math.MaxInt64 < math.MaxFloat64
@@ -66,6 +73,7 @@ func (ms *MetricsUpdater) UpdatePromMetrics() error {
 		i++
 		return i < ms.limit // break on limit
 	})
+	log.Printf("done updating metrics for run %s", ms.lastRunDate)
 
 	return nil
 }

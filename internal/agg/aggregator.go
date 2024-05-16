@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"time"
 
@@ -18,7 +19,8 @@ import (
 )
 
 const (
-	runDatePathFormat = "2006/01/02/15-04-05"
+	runDatePathFormat  = "2006/01/02/15-04-05"
+	maxSaneCountDuRows = 1e7
 )
 
 const (
@@ -83,6 +85,7 @@ func NewAggregator(azureStorageConnectionString, blobInventoryContainer string, 
 }
 
 func (a *Aggregator) Aggregate(minimalLastRunDate time.Time) (aggregationResults AggregationResults, lastRunDate time.Time, err error) {
+	log.Print("finding last inventory run")
 	rulesRanByDate, err := a.findRuns()
 	if err != nil {
 		return
@@ -96,6 +99,7 @@ func (a *Aggregator) Aggregate(minimalLastRunDate time.Time) (aggregationResults
 		err = errors.New("last run date is too old")
 		return
 	}
+	log.Print("starting aggregation")
 	aggregationResults, err = a.aggregateRun(lastRunDate)
 	if err != nil {
 		return
@@ -104,6 +108,7 @@ func (a *Aggregator) Aggregate(minimalLastRunDate time.Time) (aggregationResults
 }
 
 func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error) {
+	log.Print("setting up duckdb / azure blob store connection")
 	db, err := sqlx.Connect("duckdb", "")
 	if err != nil {
 		return nil, err
@@ -123,10 +128,12 @@ func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error)
 	FROM read_parquet([?]) i
 	GROUP BY dir, deleted
 	ORDER BY bytes DESC
-	LIMIT 100000 -- sanity limit
+	LIMIT ? -- sanity limit
 	`
 	parquetWildcardPath := fmt.Sprintf("az://%s/%s/%s/*.parquet", a.blobInventoryContainer, runDate.Format(runDatePathFormat), "*")
-	rows, err := db.Queryx(duQuery, parquetWildcardPath)
+
+	log.Print("start aggregating/querying blob inventory (might take a while)")
+	rows, err := db.Queryx(duQuery, parquetWildcardPath, maxSaneCountDuRows)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +143,7 @@ func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error)
 		return i > j // desc
 	})
 	var row duRow
+	i := 0
 	for rows.Next() {
 		err = rows.StructScan(&row)
 		if err != nil {
@@ -143,7 +151,15 @@ func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error)
 		}
 		aggregationGroup := a.applyRulesToAggregate(row)
 		soFar, _ := aggregationResult.Get(aggregationGroup)
-		aggregationResult.Insert(aggregationGroup, soFar)
+		aggregationResult.Insert(aggregationGroup, soFar+row.Bytes)
+		if i%10000 == 0 {
+			log.Printf("%d du rows processed so far", i)
+		}
+		i++
+	}
+	log.Printf("done aggregating/querying blob inventory, %d du rows processed", i)
+	if i >= maxSaneCountDuRows {
+		return nil, errors.New("du rows count sanity limit was reached")
 	}
 
 	return aggregationResult, nil

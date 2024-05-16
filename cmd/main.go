@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/google/uuid"
 	"log"
 	"net/http"
 	"os"
@@ -67,25 +68,26 @@ func main() {
 		if err != nil {
 			return err
 		}
-		metricsUpdater := serv.NewMetricsUpdater(aggregator, "pdok", "storage", 10000)
+		metricsUpdater := serv.NewMetricsUpdater(aggregator, "pdok", "storage", 1000)
 
 		scheduler, err := gocron.NewScheduler()
 		if err != nil {
 			return err
 		}
-		job, err := scheduler.NewJob(
-			gocron.DurationJob(time.Hour),
+		_, err = scheduler.NewJob(
+			gocron.DurationJob(time.Hour), // blob inventory reports run daily or weekly, so checking hourly seems frequent enough
 			gocron.NewTask(metricsUpdater.UpdatePromMetrics),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule))
+			gocron.WithName("updating metrics"),
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+			gocron.WithStartAt(gocron.WithStartImmediately()),
+			gocron.WithEventListeners(
+				gocron.AfterJobRunsWithError(func(jobID uuid.UUID, jobName string, err error) {
+					log.Printf("%s (%s) errored: %s", jobName, jobID, err.Error())
+				})))
 		if err != nil {
 			return err
 		}
 		scheduler.Start()
-
-		err = job.RunNow()
-		if err != nil {
-			return err
-		}
 
 		http.Handle("/metrics", promhttp.Handler())
 		return http.ListenAndServe(c.String("bind-address"), nil)
