@@ -4,5 +4,5 @@ labels:
   owner: other
   dataset: other
 rules:
-  - pattern: ^(?P<container>argo-artifacts|container-logs|mimir-blocks|elasticsearch-snapshots)/
+  - pattern: ^(?P<container>argo-artifacts|container-logs|mimir-blocks|elasticsearch-snapshots)(/|$)
   - pattern: ^(?P<container>[^/]+)/(?P<owner>[^/]+)/(?P<dataset>[^/]+)

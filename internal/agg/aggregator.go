@@ -2,6 +2,7 @@ package agg
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"slices"
 	"time"
@@ -42,12 +43,15 @@ type Aggregator struct {
 	rules              []AggregationRule
 }
 
-func NewAggregator(duReader du.Reader, labels Labels, rules []AggregationRule) *Aggregator {
+func NewAggregator(duReader du.Reader, labels Labels, rules []AggregationRule) (*Aggregator, error) {
+	if _, exists := labels[Deleted]; exists {
+		return nil, errors.New("cannot use deleted as a label")
+	}
 	return &Aggregator{
 		duReader:           duReader,
 		labelsWithDefaults: labels,
 		rules:              rules,
-	}
+	}, nil
 }
 
 func (a *Aggregator) GetLabelNames() []string {
@@ -63,23 +67,25 @@ func (a *Aggregator) Aggregate(previousRunDate time.Time) (aggregationResults []
 		return nil, runDate, err
 	}
 	if !runDate.After(previousRunDate) {
-		return nil, runDate, err
+		return nil, runDate, nil
 	}
 
 	intermediateResults := make(map[string]du.StorageUsage)
 	i := 0
 	for rowsCh != nil && errCh != nil {
 		select {
-		case err, open := <-errCh:
-			if !open {
+		case err, ok := <-errCh:
+			if !ok {
 				errCh = nil
+				continue
 			}
 			if err != nil {
 				return nil, runDate, err
 			}
-		case row, open := <-rowsCh:
-			if !open {
+		case row, ok := <-rowsCh:
+			if !ok {
 				rowsCh = nil
+				continue
 			}
 			aggregationGroup := a.applyRulesToAggregate(row)
 			intermediateResults[marshalAggregationGroup(aggregationGroup)] += row.Bytes
@@ -89,12 +95,12 @@ func (a *Aggregator) Aggregate(previousRunDate time.Time) (aggregationResults []
 			i++
 		}
 	}
-	log.Printf("done aggregating/querying blob inventory, %d du rows processed", i)
+	log.Printf("done aggregating blob inventory, %d du rows processed", i)
 
 	return intermediateResultsToAggregationResults(intermediateResults), runDate, nil
 }
 
-// The key in intermediate results of aggregateRun is a JSON representation of AggregationGroup
+// The key in intermediate results of Aggregator.Aggregate is a JSON representation of AggregationGroup
 // because a map is not a comparable type.
 // Property order in the JSON is predictable/constant.
 func marshalAggregationGroup(aggregationGroup AggregationGroup) string {
@@ -146,7 +152,7 @@ func (a *Aggregator) applyRulesToAggregate(row du.Row) AggregationGroup {
 }
 
 func (a *Aggregator) applyRuleDefaults(labelsFromPattern Labels, rule AggregationRule) Labels {
-	labels := a.labelsWithDefaults
+	labels := maps.Clone(a.labelsWithDefaults)
 	for label, defaultVal := range labels {
 		labels[label] = defaultStr(
 			labelsFromPattern[label], // first use a match group

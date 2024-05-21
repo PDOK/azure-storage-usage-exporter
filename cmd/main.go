@@ -117,7 +117,7 @@ func createAggregatorFromCliCtx(c *cli.Context) (*agg.Aggregator, error) {
 		duReader,
 		config.Labels,
 		config.Rules,
-	), nil
+	)
 }
 
 func loadConfig(configFile string) (*Config, error) {
