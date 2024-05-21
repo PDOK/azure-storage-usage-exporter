@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/google/uuid"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/PDOK/azure-storage-usage-exporter/internal/serv"
 	"github.com/go-co-op/gocron/v2"
@@ -19,11 +20,16 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+type Config struct {
+	Labels agg.Labels            `yaml:"labels"`
+	Rules  []agg.AggregationRule `yaml:"rules"`
+}
+
 const (
 	cliOptAzureStorageConnectionString = "azure-storage-connection-string"
 	cliOptBindAddress                  = "bind-address"
 	cliOptBlobInventoryContainer       = "blob-inventory-container"
-	cliOptExtraRulesFile               = "extra-rules-file"
+	cliOptConfigFile                   = "config"
 )
 
 var (
@@ -47,15 +53,12 @@ var (
 			EnvVars: []string{strcase.ToScreamingSnake(cliOptBlobInventoryContainer)},
 		},
 		&cli.StringFlag{
-			Name:      cliOptExtraRulesFile,
-			Usage:     "File to read extra rules from (they will come before the default rules)",
-			EnvVars:   []string{strcase.ToScreamingSnake(cliOptExtraRulesFile)},
+			Name:      cliOptConfigFile,
+			Usage:     "Config file with aggregation labels and rules",
+			EnvVars:   []string{strcase.ToScreamingSnake(cliOptConfigFile)},
+			Required:  true,
 			TakesFile: true,
 		},
-	}
-	defaultRules = []agg.AggregationRule{
-		{Pattern: agg.NewReGroup(`^(?P<owner>)(?P<dataset>)(?P<container>argo-artifacts|container-logs|mimir-blocks|elasticsearch-snapshots)/`)},
-		{Pattern: agg.NewReGroup(`^(?P<container>[^/]+)/(?P<owner>[^/]+)/(?P<dataset>[^/]+)`)},
 	}
 )
 
@@ -102,28 +105,26 @@ func main() {
 }
 
 func createAggregatorFromCliCtx(c *cli.Context) (*agg.Aggregator, error) {
-	aggregationRules, err := loadAggregationRules(c.String(cliOptExtraRulesFile))
+	config, err := loadConfig(c.String(cliOptConfigFile))
 	if err != nil {
 		return nil, err
 	}
 	return agg.NewAggregator(
 		c.String(cliOptAzureStorageConnectionString),
 		c.String(cliOptBlobInventoryContainer),
-		aggregationRules,
+		config.Labels,
+		config.Rules,
 	), nil
 }
 
-func loadAggregationRules(extraRulesFile string) ([]agg.AggregationRule, error) {
-	var rules []agg.AggregationRule
-	if extraRulesFile != "" {
-		extraRulesYaml, err := os.ReadFile(extraRulesFile)
-		if err != nil {
-			return nil, err
-		}
-		if err := yaml.Unmarshal(extraRulesYaml, &rules); err != nil {
-			return nil, err
-		}
+func loadConfig(configFile string) (*Config, error) {
+	config := new(Config)
+	configYaml, err := os.ReadFile(configFile)
+	if err != nil {
+		return nil, err
 	}
-	rules = append(rules, defaultRules...)
-	return rules, nil
+	if err := yaml.Unmarshal(configYaml, &config); err != nil {
+		return nil, err
+	}
+	return config, nil
 }

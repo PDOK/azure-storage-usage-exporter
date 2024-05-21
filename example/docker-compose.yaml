@@ -36,8 +36,11 @@ services:
     build:
       context: ../
       dockerfile: Dockerfile
+    volumes:
+      - ./:/example
     environment:
       AZURE_STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;BlobEndpoint=http://azurite:10000/devstoreaccount1;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;
+      CONFIG: /example/config.yaml
     depends_on:
       azurite-seed:
         condition: service_completed_successfully

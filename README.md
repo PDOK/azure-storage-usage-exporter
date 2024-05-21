@@ -8,17 +8,21 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/pdok/azure-storage-usage-exporter.svg)](https://hub.docker.com/r/pdok/azure-storage-usage-exporter)
 
 This app generates and exports/exposes statistics about cloud storage usage.
-It is initially tailored to PDOK's use case:
 
-* The cloud storage is [Azure Blob storage](https://azure.microsoft.com/en-us/products/storage/blobs). 
+* The cloud storage used is [Azure Blob storage](https://azure.microsoft.com/en-us/products/storage/blobs). 
 * Usage concerns (current) occupation, not transactions.
-* The aggregation groups are: container, owner and dataset.
+
+It was initially tailored to PDOK's use case to divide the usage of a multi-tenanted storage into:
+
+* container (type of usage, not the storage container name per se)
+* owner (tenant)
+* dataset (a subdivision of owner/tenant)
 
 It does so by:
 
 * Periodically aggregating an [Azure Storage blob inventory report](https://learn.microsoft.com/en-us/azure/storage/blobs/blob-inventory).
-* Applying rules about which container/directory/prefix applies to which dataset and owner combo.
-* Exposing the results in a prometheus endpoint.
+* Applying ordered rules (regular expressions) to match container/directory/prefix to labels.
+* Exposing the results as a Prometheus metrics endpoint. (Later used in a Grafana dashboard.)
 
 ## Build
 
@@ -39,18 +43,23 @@ GLOBAL OPTIONS:
    --azure-storage-connection-string value  Connection string for connecting to the Azure blob storage that holds the inventory [$AZURE_STORAGE_CONNECTION_STRING]
    --bind-address value                     The TCP network address addr that is listened on. (default: ":8080") [$BIND_ADDRESS]
    --blob-inventory-container value         Name of the container that holds the inventory (default: "blob-inventory") [$BLOB_INVENTORY_CONTAINER]
-   --extra-rules-file value                 File to read extra rules from (they will come before the default rules) [$EXTRA_RULES_FILE]
+   --config value                           Config file with aggregation labels and rules [$CONFIG]
    --help, -h                               show help
 ```
 
-### Extra rules file
+### Config file
 
-Example of extra rules file contents:
+Example config file:
 
 ```yaml
-- pattern: ^(?P<container>special)/(?P<owner>[^/]+)/.+)
-  dataset: my-dataset # constant arbitrary _dataset_ label overrides dataset group from regex (could be left out of pattern)
-- pattern: ^(?P<container>[^/]+)/(?P<owner>[^/]+)/(?P<dataset>[^/]+)
+labels: # labels that are used in each metric and their default values
+  type: other
+  tenant: other
+rules: # rules are tried in order until a pattern matches
+  - pattern: ^strange-dir/(?P<tenant>[^/]+)/.+
+    labels: # static labels that don't get their values from the regex 
+      - type: special
+  - pattern: ^(?P<type>[^/]+)/(?P<tenant>[^/]+)/.+
 ```
 
 ### Observability

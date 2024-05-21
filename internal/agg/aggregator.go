@@ -2,13 +2,12 @@ package agg
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"slices"
 	"time"
-
-	"github.com/tobshub/go-sortedmap"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/marcboeker/go-duckdb" // duckdb sql driver
@@ -21,50 +20,44 @@ import (
 const (
 	runDatePathFormat  = "2006/01/02/15-04-05"
 	maxSaneCountDuRows = 1e7
+	duDepth            = 4
 )
 
 const (
-	Container  = "container"
-	Owner      = "owner"
-	Dataset    = "dataset"
-	Deleted    = "deleted"
-	OtherValue = "OTHER"
+	Deleted = "deleted"
 )
 
 var (
 	blobInventoryFileRunMatchPattern = regroup.MustCompile(`^(?P<date>\d{4}/\d{2}/\d{2}/\d{2}-\d{2}-\d{2})/(?P<rule>[^/]+)/[^_]+_\d+_\d+.parquet$`)
-	otherAggregationGroup            = AggregationGroup{
-		Container: OtherValue,
-		Owner:     OtherValue,
-		Dataset:   OtherValue,
-	}
 )
-
-type Aggregator struct {
-	azureStorageConnectionString string
-	blobInventoryContainer       string
-	rules                        []AggregationRule
-}
-
-// TODO maybe refactor to not have hard coded labels
-type AggregationGroup struct {
-	Container string `yaml:"container,omitempty" regroup:"container"`
-	Owner     string `yaml:"owner,omitempty" regroup:"owner"`
-	Dataset   string `yaml:"dataset,omitempty" regroup:"dataset"`
-	Deleted   bool   `yaml:"deleted,omitempty"`
-}
 
 // StorageUsage is storage usage/size in bytes
 type StorageUsage = int64
 
-type AggregationResults = *sortedmap.SortedMap[AggregationGroup, StorageUsage]
+type Labels = map[string]string
 
-// AggregationRule is matched to a blob's path (including container/bucket, without filename, maximum X levels deep).
-// If it matches, the named groups from the regex pattern or the defaults from the AggregationGroup are used
-// to aggregate the blob's size cq storage usage.
 type AggregationRule struct {
-	AggregationGroup `yaml:",inline"`
-	Pattern          ReGroup `yaml:"pattern"`
+	// The named groups are used as labels
+	Pattern ReGroup `yaml:"pattern"`
+	// A label not found as named group is looked up in this
+	StaticLabels map[string]string `yaml:"labels"`
+}
+
+type AggregationGroup struct {
+	Labels  Labels
+	Deleted bool
+}
+
+type AggregationResult struct {
+	AggregationGroup AggregationGroup
+	StorageUsage     StorageUsage
+}
+
+type Aggregator struct {
+	azureStorageConnectionString string
+	blobInventoryContainer       string
+	labelsWithDefaults           Labels
+	rules                        []AggregationRule
 }
 
 type duRow struct {
@@ -76,15 +69,22 @@ type duRow struct {
 
 type rulesRanByDate = map[time.Time][]string
 
-func NewAggregator(azureStorageConnectionString, blobInventoryContainer string, aggregationRules []AggregationRule) *Aggregator {
+func NewAggregator(azureStorageConnectionString, blobInventoryContainer string, labels Labels, rules []AggregationRule) *Aggregator {
 	return &Aggregator{
 		azureStorageConnectionString: azureStorageConnectionString,
 		blobInventoryContainer:       blobInventoryContainer,
-		rules:                        aggregationRules,
+		labelsWithDefaults:           labels,
+		rules:                        rules,
 	}
 }
 
-func (a *Aggregator) Aggregate(minimalLastRunDate time.Time) (aggregationResults AggregationResults, lastRunDate time.Time, err error) {
+func (a *Aggregator) GetLabelNames() []string {
+	keys := maps.Keys(a.labelsWithDefaults)
+	keys = append(keys, Deleted)
+	return keys
+}
+
+func (a *Aggregator) Aggregate(minimalLastRunDate time.Time) (aggregationResults []AggregationResult, lastRunDate time.Time, err error) {
 	log.Print("finding last inventory run")
 	rulesRanByDate, err := a.findRuns()
 	if err != nil {
@@ -107,7 +107,9 @@ func (a *Aggregator) Aggregate(minimalLastRunDate time.Time) (aggregationResults
 	return
 }
 
-func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error) {
+// aggregateRun first coarsely aggregates with duckdb to group all blob names to max X levels deep
+// and the resulting "du" rows are then further aggregated using the aggregation rules bases on regexes
+func (a *Aggregator) aggregateRun(runDate time.Time) ([]AggregationResult, error) {
 	log.Print("setting up duckdb / azure blob store connection")
 	db, err := sqlx.Connect("duckdb", "")
 	if err != nil {
@@ -121,7 +123,7 @@ func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error)
 
 	// language=sql
 	duQuery := `
-	SELECT array_to_string(string_split(i.Name, '/')[1:-2][1:4], '/') as dir, -- it's a 1-based index; inclusive boundaries; :-2 strips the filename
+	SELECT array_to_string(string_split(i.Name, '/')[1:-2][1:?], '/') as dir, -- it's a 1-based index; inclusive boundaries; :-2 strips the filename
 		   i."Deleted" as deleted,
 		   sum(i."Content-Length") as bytes,
 		   count(*) as cnt
@@ -133,15 +135,13 @@ func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error)
 	parquetWildcardPath := fmt.Sprintf("az://%s/%s/%s/*.parquet", a.blobInventoryContainer, runDate.Format(runDatePathFormat), "*")
 
 	log.Print("start aggregating/querying blob inventory (might take a while)")
-	rows, err := db.Queryx(duQuery, parquetWildcardPath, maxSaneCountDuRows)
+	rows, err := db.Queryx(duQuery, duDepth, parquetWildcardPath, maxSaneCountDuRows)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	aggregationResult := sortedmap.New[AggregationGroup, StorageUsage](0, func(i, j StorageUsage) bool {
-		return i > j // desc
-	})
+	intermediateResults := make(map[string]StorageUsage)
 	var row duRow
 	i := 0
 	for rows.Next() {
@@ -150,8 +150,7 @@ func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error)
 			return nil, err
 		}
 		aggregationGroup := a.applyRulesToAggregate(row)
-		soFar, _ := aggregationResult.Get(aggregationGroup)
-		aggregationResult.Insert(aggregationGroup, soFar+row.Bytes)
+		intermediateResults[marshalAggregationGroup(aggregationGroup)] += row.Bytes
 		if i%10000 == 0 {
 			log.Printf("%d du rows processed so far", i)
 		}
@@ -162,29 +161,70 @@ func (a *Aggregator) aggregateRun(runDate time.Time) (AggregationResults, error)
 		return nil, errors.New("du rows count sanity limit was reached")
 	}
 
-	return aggregationResult, nil
+	return intermediateResultsToAggregationResults(intermediateResults), nil
+}
+
+// The key in intermediate results of aggregateRun is a JSON representation of AggregationGroup
+// because a map is not a comparable type.
+// Property order in the JSON is predictable/constant.
+func marshalAggregationGroup(aggregationGroup AggregationGroup) string {
+	b, _ := json.Marshal(aggregationGroup)
+	return string(b)
+}
+
+func unmarshalAggregationGroup(aggregationGroupJson string) AggregationGroup {
+	aggregationGroup := new(AggregationGroup)
+	_ = json.Unmarshal([]byte(aggregationGroupJson), aggregationGroup)
+	return *aggregationGroup
+}
+
+func intermediateResultsToAggregationResults(intermediateResults map[string]StorageUsage) []AggregationResult {
+	aggregationResults := make([]AggregationResult, len(intermediateResults))
+	i := 0
+	for aggregationGroup, storageUsage := range intermediateResults {
+		aggregationResults[i] = AggregationResult{
+			AggregationGroup: unmarshalAggregationGroup(aggregationGroup),
+			StorageUsage:     storageUsage,
+		}
+		i++
+	}
+
+	// sort by storageUsage desc
+	slices.SortFunc(aggregationResults, func(a, b AggregationResult) int {
+		return int(b.StorageUsage - a.StorageUsage)
+	})
+
+	return aggregationResults
 }
 
 func (a *Aggregator) applyRulesToAggregate(row duRow) AggregationGroup {
 	for _, aggregationRule := range a.rules {
-		aggregationGroup := &AggregationGroup{}
-		err := aggregationRule.Pattern.MatchToTarget(row.Dir, aggregationGroup)
+		labelsFromPattern, err := aggregationRule.Pattern.Groups(row.Dir)
 		if err != nil {
 			continue
 		}
-		aggregationGroup.applyRuleDefaults(aggregationRule)
-		if row.Deleted != nil && *row.Deleted {
-			aggregationGroup.Deleted = true
+		aggregationGroup := AggregationGroup{
+			Labels: a.applyRuleDefaults(labelsFromPattern, aggregationRule),
 		}
-		return *aggregationGroup
+		aggregationGroup.Deleted = nilBoolToBool(row.Deleted)
+		return aggregationGroup
 	}
-	return otherAggregationGroup
+	return AggregationGroup{
+		Labels:  a.labelsWithDefaults,
+		Deleted: nilBoolToBool(row.Deleted),
+	}
 }
 
-func (ag *AggregationGroup) applyRuleDefaults(rule AggregationRule) {
-	ag.Container = defaultStr(defaultStr(ag.Container, rule.Container), OtherValue)
-	ag.Owner = defaultStr(defaultStr(ag.Owner, rule.Owner), OtherValue)
-	ag.Dataset = defaultStr(defaultStr(ag.Dataset, rule.Dataset), OtherValue)
+func (a *Aggregator) applyRuleDefaults(labelsFromPattern Labels, rule AggregationRule) Labels {
+	labels := a.labelsWithDefaults
+	for label, defaultVal := range labels {
+		labels[label] = defaultStr(
+			labelsFromPattern[label], // first use a match group
+			rule.StaticLabels[label], // otherwise use a static label from the rule
+			defaultVal,               // fall back to the label default
+		)
+	}
+	return labels
 }
 
 func (a *Aggregator) initDB(db *sqlx.DB) error {
@@ -246,9 +286,18 @@ func getLastRunDate(rulesRanByDate rulesRanByDate) (runDate time.Time, ok bool) 
 	}), true
 }
 
-func defaultStr(s, d string) string {
-	if s == "" {
-		return d
+func defaultStr(s ...string) string {
+	for i := range s {
+		if s[i] != "" {
+			return s[i]
+		}
 	}
-	return s
+	return ""
+}
+
+func nilBoolToBool(p *bool) bool {
+	if p != nil {
+		return *p
+	}
+	return false
 }
