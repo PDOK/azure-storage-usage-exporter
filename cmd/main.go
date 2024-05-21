@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/PDOK/azure-storage-usage-exporter/internal/du"
+
 	"github.com/google/uuid"
 
 	"github.com/PDOK/azure-storage-usage-exporter/internal/serv"
@@ -109,9 +111,10 @@ func createAggregatorFromCliCtx(c *cli.Context) (*agg.Aggregator, error) {
 	if err != nil {
 		return nil, err
 	}
+	duReader := du.NewAzureBlobInventoryReportDuReader(c.String(cliOptAzureStorageConnectionString),
+		c.String(cliOptBlobInventoryContainer))
 	return agg.NewAggregator(
-		c.String(cliOptAzureStorageConnectionString),
-		c.String(cliOptBlobInventoryContainer),
+		duReader,
 		config.Labels,
 		config.Rules,
 	), nil

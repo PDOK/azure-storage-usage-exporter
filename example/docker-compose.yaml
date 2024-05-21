@@ -31,18 +31,18 @@ services:
       - |
         rclone copy -vv /example/blob-inventory blobs:blob-inventory
 
-  azure-storage-usage-exporter:
-    image: azure-storage-usage-exporter:local  # run local image if available (used in CI)
-    build:
-      context: ../
-      dockerfile: Dockerfile
-    volumes:
-      - ./:/example
-    environment:
-      AZURE_STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;BlobEndpoint=http://azurite:10000/devstoreaccount1;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;
-      CONFIG: /example/config.yaml
-    depends_on:
-      azurite-seed:
-        condition: service_completed_successfully
-    ports:
-      - "8080:8080"
+#  azure-storage-usage-exporter:
+#    image: azure-storage-usage-exporter:local  # run local image if available (used in CI)
+#    build:
+#      context: ../
+#      dockerfile: Dockerfile
+#    volumes:
+#      - ./:/example
+#    environment:
+#      AZURE_STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;BlobEndpoint=http://azurite:10000/devstoreaccount1;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;
+#      CONFIG: /example/config.yaml
+#    depends_on:
+#      azurite-seed:
+#        condition: service_completed_successfully
+#    ports:
+#      - "8080:8080"
