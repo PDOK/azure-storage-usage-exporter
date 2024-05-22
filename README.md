@@ -7,22 +7,26 @@
 [![GitHub license](https://img.shields.io/github/license/PDOK/azure-storage-usage-exporter)](https://github.com/PDOK/azure-storage-usage-exporter/blob/master/LICENSE)
 [![Docker Pulls](https://img.shields.io/docker/pulls/pdok/azure-storage-usage-exporter.svg)](https://hub.docker.com/r/pdok/azure-storage-usage-exporter)
 
-This app generates and exports/exposes statistics about cloud storage usage.
+This Prometheus exporter exposes statistics about [Azure Blob storage](https://azure.microsoft.com/en-us/products/storage/blobs) usage.
+It relies upon data from [Azure Storage blob inventory reports](https://learn.microsoft.com/en-us/azure/storage/blobs/blob-inventory).
+This data is aggregated, matched against configured labels and exposed as a Prometheus metrics endpoint.
+The goal is to expose stats about storage/disk usage (not transactions) per Azure Blob container/directory/prefix.
 
-* The cloud storage used is [Azure Blob storage](https://azure.microsoft.com/en-us/products/storage/blobs). 
-* Usage concerns (current) occupation, not transactions.
+## Example metrics output
 
-It was initially tailored to PDOK's use case to divide the usage of a multi-tenanted storage into:
-
-* container (type of usage, not the storage container name per se)
-* owner (tenant)
-* dataset (a subdivision of owner/tenant)
-
-It does so by:
-
-* Periodically aggregating an [Azure Storage blob inventory report](https://learn.microsoft.com/en-us/azure/storage/blobs/blob-inventory).
-* Applying ordered rules (regular expressions) to match container/directory/prefix to labels.
-* Exposing the results as a Prometheus metrics endpoint. (Later used in a Grafana dashboard.)
+```text
+# HELP pdok_storage_lastRunDateMetric 
+# TYPE pdok_storage_lastRunDateMetric gauge
+pdok_storage_lastRunDateMetric 1.716122623e+09
+# HELP pdok_storage_usage 
+# TYPE pdok_storage_usage gauge
+pdok_storage_usage{container="blob-inventory",dataset="other",deleted="false",owner="other"} 1.4511800263e+10
+pdok_storage_usage{container="blob-inventory",dataset="other",deleted="true",owner="other"} 1.4697209865e+10
+pdok_storage_usage{container="deliveries",dataset="something",deleted="false",owner="someone"} 1.4624738e+07
+pdok_storage_usage{container="deliveries",dataset="something",deleted="true",owner="someone"} 2.0263731e+07
+pdok_storage_usage{container="deliveries",dataset="somethingelse",deleted="false",owner="someoneelse"} 1.8042443e+07
+# .....
+```
 
 ## Build
 
@@ -61,12 +65,6 @@ rules: # rules are tried in order until a pattern matches
       - type: special
   - pattern: ^(?P<type>[^/]+)/(?P<tenant>[^/]+)/.+
 ```
-
-### Observability
-
-#### Health checks
-
-Health endpoint is available on `/health`.
 
 ### Linting
 

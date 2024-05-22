@@ -23,8 +23,8 @@ type rulesRanByDate = map[time.Time][]string
 
 const (
 	runDatePathFormat  = "2006/01/02/15-04-05"
-	maxSaneCountDuRows = 1e7
-	duDepth            = 4
+	maxSaneCountDuRows = 10000000 // 10 million. if breached, maybe adapt duDepth
+	duDepth            = 4        // aggregate blob usage 4 dirs deep
 )
 
 var (
@@ -65,7 +65,7 @@ func (ar *AzureBlobInventoryReportDuReader) Read(previousRunDate time.Time) (tim
 	}
 	log.Printf("found newest inventory run: %s", runDate)
 
-	log.Print("setting up duckdb / azure blob store connection")
+	log.Print("setting up duckdb, including azure blob store connection")
 	db, err := sqlx.Connect("duckdb", "")
 	if err != nil {
 		return runDate, nil, nil, err
@@ -123,7 +123,7 @@ func (ar *AzureBlobInventoryReportDuReader) readRowsFromInventoryReport(runDate 
 		rowsCh <- duRow
 		i++
 	}
-	log.Printf("done querying blob inventory, %d du rows processed", i)
+	log.Printf("done querying blob inventory, %d disk usage rows processed", i)
 }
 
 func (ar *AzureBlobInventoryReportDuReader) initDB(db *sqlx.DB) error {

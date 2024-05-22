@@ -90,7 +90,7 @@ func (a *Aggregator) Aggregate(previousRunDate time.Time) (aggregationResults []
 			aggregationGroup := a.applyRulesToAggregate(row)
 			intermediateResults[marshalAggregationGroup(aggregationGroup)] += row.Bytes
 			if i%10000 == 0 {
-				log.Printf("%d du rows processed so far", i)
+				log.Printf("%d disk usage rows processed so far", i)
 			}
 			i++
 		}
