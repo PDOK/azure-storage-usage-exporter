@@ -39,20 +39,21 @@ func NewAzureBlobInventoryReportDuReader(azureStorageConnectionString, blobInven
 }
 
 func (ar *AzureBlobInventoryReportDuReader) Read(previousRunDate time.Time) (time.Time, <-chan Row, <-chan error, error) {
-	log.Print("finding last inventory run")
+	log.Print("finding newest inventory run")
 	rulesRanByDate, err := ar.findRuns()
 	if err != nil {
 		return time.Time{}, nil, nil, err
 	}
 	runDate, found := getLastRunDate(rulesRanByDate)
 	if !found {
-		err = errors.New("no last run date found")
+		err = errors.New("no run date found")
 		return runDate, nil, nil, err
 	}
 	if !runDate.After(previousRunDate) { // no new data
-		err = errors.New("last run date is not after previous run date")
+		err = errors.New("newest run date is not after previous run date")
 		return runDate, nil, nil, err
 	}
+	log.Printf("found newest inventory run: %s", runDate)
 
 	log.Print("setting up duckdb / azure blob store connection")
 	db, err := sqlx.Connect("duckdb", "")

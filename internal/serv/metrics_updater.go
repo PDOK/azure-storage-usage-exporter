@@ -37,11 +37,11 @@ func NewMetricsUpdater(aggregator *agg.Aggregator, metricNamespace, metricSubsys
 }
 
 func (ms *MetricsUpdater) UpdatePromMetrics() error {
-	log.Printf("start updating metrics. last run was %s", ms.lastRunDate)
+	log.Printf("start updating metrics. previous run was %s", ms.lastRunDate)
 	aggregationResults, lastRunDate, err := ms.aggregator.Aggregate(ms.lastRunDate)
 	if err != nil {
 		if !lastRunDate.IsZero() && lastRunDate.Equal(ms.lastRunDate) {
-			log.Print("no newer blob inventory fun found")
+			log.Print("no newer blob inventory run found")
 			return nil
 		}
 		return err
