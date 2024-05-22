@@ -134,6 +134,10 @@ func (f *fakeDuReader) Read(previousRunDate time.Time) (time.Time, <-chan du.Row
 	return f.runDate, rowsCh, errCh, nil
 }
 
+func (f *fakeDuReader) TestConnection() error {
+	return nil
+}
+
 func boolPtr(b bool) *bool {
 	return &b
 }

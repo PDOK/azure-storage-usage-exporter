@@ -117,6 +117,9 @@ func createAggregatorFromCliCtx(c *cli.Context) (*agg.Aggregator, error) {
 	}
 	duReader := du.NewAzureBlobInventoryReportDuReader(c.String(cliOptAzureStorageConnectionString),
 		c.String(cliOptBlobInventoryContainer))
+	if err := duReader.TestConnection(); err != nil {
+		return nil, err
+	}
 	return agg.NewAggregator(
 		duReader,
 		config.Labels,

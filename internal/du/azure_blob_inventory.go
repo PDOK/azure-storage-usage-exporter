@@ -38,6 +38,16 @@ func NewAzureBlobInventoryReportDuReader(azureStorageConnectionString, blobInven
 	}
 }
 
+func (ar *AzureBlobInventoryReportDuReader) TestConnection() error {
+	blobClient, err := ar.newBlobClient()
+	if err != nil {
+		return err
+	}
+	pager := blobClient.NewListBlobsFlatPager(ar.blobInventoryContainer, &azblob.ListBlobsFlatOptions{MaxResults: int32Ptr(1)})
+	_, err = pager.NextPage(context.TODO())
+	return err
+}
+
 func (ar *AzureBlobInventoryReportDuReader) Read(previousRunDate time.Time) (time.Time, <-chan Row, <-chan error, error) {
 	log.Print("finding newest inventory run")
 	rulesRanByDate, err := ar.findRuns()
@@ -139,7 +149,7 @@ func (ar *AzureBlobInventoryReportDuReader) initDB(db *sqlx.DB) error {
 }
 
 func (ar *AzureBlobInventoryReportDuReader) findRuns() (rulesRanByDate, error) {
-	blobClient, err := azblob.NewClientFromConnectionString(ar.azureStorageConnectionString, nil)
+	blobClient, err := ar.newBlobClient()
 	if err != nil {
 		return nil, err
 	}
@@ -173,4 +183,16 @@ func getLastRunDate(rulesRanByDate rulesRanByDate) (runDate time.Time, ok bool) 
 	return slices.MaxFunc(dates, func(i, j time.Time) int {
 		return i.Compare(j)
 	}), true
+}
+
+func (ar *AzureBlobInventoryReportDuReader) newBlobClient() (*azblob.Client, error) {
+	blobClient, err := azblob.NewClientFromConnectionString(ar.azureStorageConnectionString, nil)
+	if err != nil {
+		return nil, err
+	}
+	return blobClient, nil
+}
+
+func int32Ptr(i int32) *int32 {
+	return &i
 }

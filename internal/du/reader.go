@@ -20,4 +20,5 @@ type Row struct {
 // If there is no new data, the returned runDate will be the same and the channel nil.
 type Reader interface {
 	Read(previousRunDate time.Time) (runDate time.Time, rows <-chan Row, errs <-chan error, err error)
+	TestConnection() error
 }
