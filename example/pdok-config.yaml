@@ -1,4 +1,5 @@
 ---
+azure: {}
 labels:
   container: other
   owner: other

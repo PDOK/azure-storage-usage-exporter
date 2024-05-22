@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/creasty/defaults"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/jmoiron/sqlx"
@@ -14,9 +17,29 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+type AzureBlobInventoryReportConfig struct {
+	AzureStorageConnectionString string `yaml:"AzureStorageConnectionString" default:"DefaultEndpointsProtocol=http;BlobEndpoint=http://localhost:10000/devstoreaccount1;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"`
+	BlobInventoryContainer       string `yaml:"BlobInventoryContainer" default:"blob-inventory"`
+	MaxMemory                    string `yaml:"maxMemory" default:"1GB"`
+	Threads                      int    `yaml:"threads" default:"4"`
+}
+
+type unmarshalledAzureBlobInventoryReportConfig AzureBlobInventoryReportConfig
+
+func (c *AzureBlobInventoryReportConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	tmp := new(unmarshalledAzureBlobInventoryReportConfig)
+	if err := defaults.Set(tmp); err != nil {
+		return err
+	}
+	if err := unmarshal(tmp); err != nil {
+		return err
+	}
+	*c = AzureBlobInventoryReportConfig(*tmp)
+	return nil
+}
+
 type AzureBlobInventoryReportDuReader struct {
-	azureStorageConnectionString string
-	blobInventoryContainer       string
+	config AzureBlobInventoryReportConfig
 }
 
 type rulesRanByDate = map[time.Time][]string
@@ -31,10 +54,9 @@ var (
 	blobInventoryFileRunMatchPattern = regroup.MustCompile(`^(?P<date>\d{4}/\d{2}/\d{2}/\d{2}-\d{2}-\d{2})/(?P<rule>[^/]+)/[^_]+_\d+_\d+.parquet$`)
 )
 
-func NewAzureBlobInventoryReportDuReader(azureStorageConnectionString, blobInventoryContainer string) *AzureBlobInventoryReportDuReader {
+func NewAzureBlobInventoryReportDuReader(config AzureBlobInventoryReportConfig) *AzureBlobInventoryReportDuReader {
 	return &AzureBlobInventoryReportDuReader{
-		azureStorageConnectionString: azureStorageConnectionString,
-		blobInventoryContainer:       blobInventoryContainer,
+		config: config,
 	}
 }
 
@@ -43,7 +65,7 @@ func (ar *AzureBlobInventoryReportDuReader) TestConnection() error {
 	if err != nil {
 		return err
 	}
-	pager := blobClient.NewListBlobsFlatPager(ar.blobInventoryContainer, &azblob.ListBlobsFlatOptions{MaxResults: int32Ptr(1)})
+	pager := blobClient.NewListBlobsFlatPager(ar.config.BlobInventoryContainer, &azblob.ListBlobsFlatOptions{MaxResults: int32Ptr(1)})
 	_, err = pager.NextPage(context.TODO())
 	return err
 }
@@ -99,7 +121,7 @@ func (ar *AzureBlobInventoryReportDuReader) readRowsFromInventoryReport(runDate 
 	ORDER BY bytes DESC
 	LIMIT ? -- sanity limit
 	`
-	parquetWildcardPath := fmt.Sprintf("az://%s/%s/%s/*.parquet", ar.blobInventoryContainer, runDate.Format(runDatePathFormat), "*")
+	parquetWildcardPath := fmt.Sprintf("az://%s/%s/%s/*.parquet", ar.config.BlobInventoryContainer, runDate.Format(runDatePathFormat), "*")
 
 	log.Print("start querying blob inventory (might take a while)")
 	dbRows, err := db.Queryx(duQuery, duDepth, parquetWildcardPath, maxSaneCountDuRows) //nolint:sqlclosecheck // it's closed 5 lines down
@@ -132,15 +154,15 @@ func (ar *AzureBlobInventoryReportDuReader) initDB(db *sqlx.DB) error {
 					LOAD azure;
 					SET azure_transport_option_type = 'curl'; -- fixes cert issues
 					CREATE SECRET az (TYPE AZURE, PROVIDER CONFIG, CONNECTION_STRING '%s');`
-	azInitQuery = fmt.Sprintf(azInitQuery, ar.azureStorageConnectionString) // FIXME db.NamedExec
+	azInitQuery = fmt.Sprintf(azInitQuery, removeQuotes(ar.config.AzureStorageConnectionString))
 	if _, err := db.Exec(azInitQuery); err != nil {
 		return err
 	}
 
 	// language=sql
-	memSetQuery := `SET memory_limit = '15GB'; -- TODO cli options for resources
-	 				SET max_memory = '15GB';
-					SET threads = 4;`
+	memSetQuery := `SET max_memory = '%s';
+					SET threads = %d;`
+	memSetQuery = fmt.Sprintf(memSetQuery, removeQuotes(ar.config.MaxMemory), ar.config.Threads)
 	if _, err := db.Exec(memSetQuery); err != nil {
 		return err
 	}
@@ -153,12 +175,15 @@ func (ar *AzureBlobInventoryReportDuReader) findRuns() (rulesRanByDate, error) {
 	if err != nil {
 		return nil, err
 	}
-	pager := blobClient.NewListBlobsFlatPager(ar.blobInventoryContainer, nil)
+	pager := blobClient.NewListBlobsFlatPager(ar.config.BlobInventoryContainer, nil)
 	rulesRanByDate := make(map[time.Time][]string)
 	for pager.More() {
 		page, err := pager.NextPage(context.TODO())
 		if err != nil {
 			return nil, err
+		}
+		if page.Segment == nil {
+			break
 		}
 		for _, blob := range page.Segment.BlobItems {
 			g, err := blobInventoryFileRunMatchPattern.Groups(*blob.Name)
@@ -186,7 +211,7 @@ func getLastRunDate(rulesRanByDate rulesRanByDate) (runDate time.Time, ok bool) 
 }
 
 func (ar *AzureBlobInventoryReportDuReader) newBlobClient() (*azblob.Client, error) {
-	blobClient, err := azblob.NewClientFromConnectionString(ar.azureStorageConnectionString, nil)
+	blobClient, err := azblob.NewClientFromConnectionString(ar.config.AzureStorageConnectionString, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -195,4 +220,8 @@ func (ar *AzureBlobInventoryReportDuReader) newBlobClient() (*azblob.Client, err
 
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+func removeQuotes(s string) string {
+	return strings.ReplaceAll(s, "'", "")
 }

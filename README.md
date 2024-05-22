@@ -44,9 +44,8 @@ COMMANDS:
    help, h  Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
-   --azure-storage-connection-string value  Connection string for connecting to the Azure blob storage that holds the inventory [$AZURE_STORAGE_CONNECTION_STRING]
+   --azure-storage-connection-string value  Connection string for connecting to the Azure blob storage that holds the inventory (overrides the config file entry) [$AZURE_STORAGE_CONNECTION_STRING]
    --bind-address value                     The TCP network address addr that is listened on. (default: ":8080") [$BIND_ADDRESS]
-   --blob-inventory-container value         Name of the container that holds the inventory (default: "blob-inventory") [$BLOB_INVENTORY_CONTAINER]
    --config value                           Config file with aggregation labels and rules [$CONFIG]
    --help, -h                               show help
 ```
@@ -56,6 +55,15 @@ GLOBAL OPTIONS:
 Example config file:
 
 ```yaml
+azure:
+  azureStorageConnectionString: DefaultEndpointsProtocol=http;BlobEndpoint=http://localhost:10000/devstoreaccount1;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;
+  blobInventoryContainer: blob-inventory
+  maxMemory: 1GB
+  threads: 4
+metrics:
+  metricNamespace: pdok
+  metricSubsystem: storage
+  limit: 1000
 labels: # labels that are used in each metric and their default values
   type: other
   tenant: other

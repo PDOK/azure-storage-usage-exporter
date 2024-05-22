@@ -12,7 +12,7 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 ENV CGO_ENABLED=1
 RUN go test -short ./...
-RUN go build -v -a -o /azure-storage-usage-exporter cmd/main.go
+RUN go build -v -a -o /azure-storage-usage-exporter github.com/PDOK/azure-storage-usage-exporter/cmd
 
 FROM docker.io/debian:bookworm-slim
 

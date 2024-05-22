@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -22,37 +23,24 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-type Config struct {
-	Labels agg.Labels            `yaml:"labels"`
-	Rules  []agg.AggregationRule `yaml:"rules"`
-}
-
 const (
 	cliOptAzureStorageConnectionString = "azure-storage-connection-string"
 	cliOptBindAddress                  = "bind-address"
-	cliOptBlobInventoryContainer       = "blob-inventory-container"
 	cliOptConfigFile                   = "config"
 )
 
 var (
 	cliFlags = []cli.Flag{
 		&cli.StringFlag{
-			Name:     cliOptAzureStorageConnectionString,
-			Usage:    "Connection string for connecting to the Azure blob storage that holds the inventory",
-			Required: true,
-			EnvVars:  []string{strcase.ToScreamingSnake(cliOptAzureStorageConnectionString)},
+			Name:    cliOptAzureStorageConnectionString,
+			Usage:   "Connection string for connecting to the Azure blob storage that holds the inventory (overrides the config file entry)",
+			EnvVars: []string{strcase.ToScreamingSnake(cliOptAzureStorageConnectionString)},
 		},
 		&cli.StringFlag{
 			Name:    cliOptBindAddress,
 			Usage:   "The TCP network address addr that is listened on.",
 			Value:   ":8080",
 			EnvVars: []string{strcase.ToScreamingSnake(cliOptBindAddress)},
-		},
-		&cli.StringFlag{
-			Name:    cliOptBlobInventoryContainer,
-			Usage:   "Name of the container that holds the inventory",
-			Value:   "blob-inventory",
-			EnvVars: []string{strcase.ToScreamingSnake(cliOptBlobInventoryContainer)},
 		},
 		&cli.StringFlag{
 			Name:      cliOptConfigFile,
@@ -71,12 +59,15 @@ func main() {
 	app.Usage = "Aggregates an Azure Blob Inventory Report and export as Prometheus metrics"
 	app.Flags = cliFlags
 	app.Action = func(c *cli.Context) error {
-		aggregator, err := createAggregatorFromCliCtx(c)
+		config, err := loadConfig(c)
 		if err != nil {
 			return err
 		}
-		metricsUpdater := metrics.NewUpdater(aggregator, "pdok", "storage", 1000)
-
+		aggregator, err := createAggregator(config)
+		if err != nil {
+			return err
+		}
+		metricsUpdater := metrics.NewUpdater(aggregator, config.Metrics)
 		scheduler, err := gocron.NewScheduler()
 		if err != nil {
 			return err
@@ -110,13 +101,12 @@ func main() {
 	}
 }
 
-func createAggregatorFromCliCtx(c *cli.Context) (*agg.Aggregator, error) {
-	config, err := loadConfig(c.String(cliOptConfigFile))
-	if err != nil {
-		return nil, err
+func createAggregator(config *Config) (*agg.Aggregator, error) {
+	if config.Azure == nil {
+		return nil, errors.New("azure config is required")
 	}
-	duReader := du.NewAzureBlobInventoryReportDuReader(c.String(cliOptAzureStorageConnectionString),
-		c.String(cliOptBlobInventoryContainer))
+	duReader := du.NewAzureBlobInventoryReportDuReader(*config.Azure)
+	log.Print("testing azure connection")
 	if err := duReader.TestConnection(); err != nil {
 		return nil, err
 	}
@@ -127,14 +117,20 @@ func createAggregatorFromCliCtx(c *cli.Context) (*agg.Aggregator, error) {
 	)
 }
 
-func loadConfig(configFile string) (*Config, error) {
+func loadConfig(c *cli.Context) (*Config, error) {
 	config := new(Config)
-	configYaml, err := os.ReadFile(configFile)
+	configYaml, err := os.ReadFile(c.String(cliOptConfigFile))
 	if err != nil {
 		return nil, err
 	}
 	if err := yaml.Unmarshal(configYaml, &config); err != nil {
 		return nil, err
 	}
+
+	azureStorageConnectionStringFromCli := c.String(cliOptAzureStorageConnectionString)
+	if config.Azure != nil && azureStorageConnectionStringFromCli != "" {
+		config.Azure.AzureStorageConnectionString = azureStorageConnectionStringFromCli
+	}
+
 	return config, nil
 }
