@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/PDOK/azure-storage-usage-exporter/internal/serv"
+	"github.com/PDOK/azure-storage-usage-exporter/internal/metrics"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/iancoleman/strcase"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -75,7 +75,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		metricsUpdater := serv.NewMetricsUpdater(aggregator, "pdok", "storage", 1000)
+		metricsUpdater := metrics.NewUpdater(aggregator, "pdok", "storage", 1000)
 
 		scheduler, err := gocron.NewScheduler()
 		if err != nil {

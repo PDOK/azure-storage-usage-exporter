@@ -1,4 +1,4 @@
-package serv
+package metrics
 
 import (
 	"log"
@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-type MetricsUpdater struct {
+type Updater struct {
 	aggregator        *agg.Aggregator
 	storageUsageGauge *prometheus.GaugeVec
 	lastRunDateMetric prometheus.Gauge
@@ -18,8 +18,8 @@ type MetricsUpdater struct {
 	limit             int
 }
 
-func NewMetricsUpdater(aggregator *agg.Aggregator, metricNamespace, metricSubsystem string, limit int) *MetricsUpdater {
-	return &MetricsUpdater{
+func NewUpdater(aggregator *agg.Aggregator, metricNamespace, metricSubsystem string, limit int) *Updater {
+	return &Updater{
 		aggregator: aggregator,
 		// promauto automatically registers with prometheus.DefaultRegisterer
 		storageUsageGauge: promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -36,7 +36,7 @@ func NewMetricsUpdater(aggregator *agg.Aggregator, metricNamespace, metricSubsys
 	}
 }
 
-func (ms *MetricsUpdater) UpdatePromMetrics() error {
+func (ms *Updater) UpdatePromMetrics() error {
 	log.Printf("start updating metrics. previous run was %s", ms.lastRunDate)
 	aggregationResults, lastRunDate, err := ms.aggregator.Aggregate(ms.lastRunDate)
 	if err != nil {
