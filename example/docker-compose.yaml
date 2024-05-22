@@ -46,3 +46,17 @@ services:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
+
+  smoketest:
+    image: busybox
+    depends_on:
+      azure-storage-usage-exporter:
+        condition: service_started
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "test metrics"
+        sleep 20 # TODO think of something better
+        wget -O - 'http://azure-storage-usage-exporter:8080/metrics' | grep 'pdok_storage_usage{deleted="false",tenant="ZDI2",type="ZTJmNTY2MTU2Y2"} 3.4038013e+07'
