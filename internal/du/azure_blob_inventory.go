@@ -92,7 +92,7 @@ func (ar *AzureBlobInventoryReportDuReader) readRowsFromInventoryReport(runDate 
 	parquetWildcardPath := fmt.Sprintf("az://%s/%s/%s/*.parquet", ar.blobInventoryContainer, runDate.Format(runDatePathFormat), "*")
 
 	log.Print("start querying blob inventory (might take a while)")
-	dbRows, err := db.Queryx(duQuery, duDepth, parquetWildcardPath, maxSaneCountDuRows)
+	dbRows, err := db.Queryx(duQuery, duDepth, parquetWildcardPath, maxSaneCountDuRows) //nolint:sqlclosecheck // it's closed 5 lines down
 	if err != nil {
 		errCh <- err
 		return

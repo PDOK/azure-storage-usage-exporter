@@ -97,7 +97,11 @@ func main() {
 		scheduler.Start()
 
 		http.Handle("/metrics", promhttp.Handler())
-		return http.ListenAndServe(c.String("bind-address"), nil)
+		server := &http.Server{
+			Addr:              c.String("bind-address"),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		return server.ListenAndServe()
 	}
 
 	err := app.Run(os.Args)
