@@ -21,7 +21,7 @@ type Updater struct {
 }
 
 type Config struct {
-	MetricNamespace string `yaml:"metricNamespace" default:"pdok"`
+	MetricNamespace string `yaml:"metricNamespace" default:"azure"`
 	MetricSubsystem string `yaml:"metricSubsystem" default:"storage"`
 	Limit           int    `yaml:"limit" default:"1000"`
 }
@@ -53,7 +53,7 @@ func NewUpdater(aggregator *agg.Aggregator, config Config) *Updater {
 		lastRunDateMetric: promauto.NewGauge(prometheus.GaugeOpts{
 			Namespace: config.MetricNamespace,
 			Subsystem: config.MetricSubsystem,
-			Name:      "lastRunDateMetric",
+			Name:      "last_run_date",
 		}),
 	}
 }

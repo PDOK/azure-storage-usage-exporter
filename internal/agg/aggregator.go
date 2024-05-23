@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	Deleted = "deleted"
+	Deleted        = "deleted"
+	StorageAccount = "storage_account"
 )
 
 type Labels = map[string]string
@@ -43,13 +44,23 @@ type Aggregator struct {
 	rules              []AggregationRule
 }
 
-func NewAggregator(duReader du.Reader, labels Labels, rules []AggregationRule) (*Aggregator, error) {
-	if _, exists := labels[Deleted]; exists {
-		return nil, errors.New("cannot use deleted as a label")
+func NewAggregator(duReader du.Reader, labelsWithDefaults Labels, rules []AggregationRule) (*Aggregator, error) {
+	if _, exists := labelsWithDefaults[Deleted]; exists {
+		return nil, errors.New("cannot use custom label: " + Deleted)
+	}
+	if labelsWithDefaults == nil {
+		labelsWithDefaults = Labels{}
+	} else {
+		labelsWithDefaults = maps.Clone(labelsWithDefaults)
+	}
+	if given, exists := labelsWithDefaults[StorageAccount]; !exists {
+		labelsWithDefaults[StorageAccount] = duReader.GetStorageAccountName()
+	} else if given == "" {
+		delete(labelsWithDefaults, StorageAccount)
 	}
 	return &Aggregator{
 		duReader:           duReader,
-		labelsWithDefaults: labels,
+		labelsWithDefaults: labelsWithDefaults,
 		rules:              rules,
 	}, nil
 }
@@ -145,8 +156,9 @@ func (a *Aggregator) applyRulesToAggregate(row du.Row) AggregationGroup {
 		aggregationGroup.Deleted = nilBoolToBool(row.Deleted)
 		return aggregationGroup
 	}
+	// default if no rule matches
 	return AggregationGroup{
-		Labels:  a.labelsWithDefaults,
+		Labels:  maps.Clone(a.labelsWithDefaults),
 		Deleted: nilBoolToBool(row.Deleted),
 	}
 }

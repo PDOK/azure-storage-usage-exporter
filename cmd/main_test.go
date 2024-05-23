@@ -14,7 +14,7 @@ import (
 func TestPerf(t *testing.T) {
 	t.Skip("local")
 	t.Run("perf", func(t *testing.T) {
-		configFile, err := os.ReadFile("example/pdok-config.yaml")
+		configFile, err := os.ReadFile("example/config.yaml")
 		require.Nil(t, err)
 		config := new(Config)
 		err = yaml.Unmarshal(configFile, config)

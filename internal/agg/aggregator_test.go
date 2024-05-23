@@ -52,10 +52,10 @@ func TestAggregator_Aggregate(t *testing.T) {
 			previousRunDate: someFixedTime.Add(-24 * time.Hour),
 		},
 		wantAggregationResults: []AggregationResult{
-			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "default1", "level2": "default2"}, Deleted: false}, StorageUsage: 666},
-			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "special", "level2": "sauce"}, Deleted: false}, StorageUsage: 321},
-			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "dir1", "level2": "dir2"}, Deleted: true}, StorageUsage: 200},
-			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "dir1", "level2": "dir2"}, Deleted: false}, StorageUsage: 100},
+			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "default1", "level2": "default2", StorageAccount: "faker"}, Deleted: false}, StorageUsage: 666},
+			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "special", "level2": "sauce", StorageAccount: "faker"}, Deleted: false}, StorageUsage: 321},
+			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "dir1", "level2": "dir2", StorageAccount: "faker"}, Deleted: true}, StorageUsage: 200},
+			{AggregationGroup: AggregationGroup{Labels: Labels{"level1": "dir1", "level2": "dir2", StorageAccount: "faker"}, Deleted: false}, StorageUsage: 100},
 		},
 		wantRunDate: someFixedTime,
 		wantErr:     false,
@@ -136,6 +136,10 @@ func (f *fakeDuReader) Read(previousRunDate time.Time) (time.Time, <-chan du.Row
 
 func (f *fakeDuReader) TestConnection() error {
 	return nil
+}
+
+func (f *fakeDuReader) GetStorageAccountName() string {
+	return "faker"
 }
 
 func boolPtr(b bool) *bool {

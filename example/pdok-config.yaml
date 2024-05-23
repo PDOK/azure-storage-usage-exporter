@@ -1,9 +1,0 @@
----
-azure: {}
-labels:
-  container: other
-  owner: other
-  dataset: other
-rules:
-  - pattern: ^(?P<container>blob-inventory|argo-artifacts|container-logs|mimir-blocks|elasticsearch-snapshots|inspire-reports)(/|$)
-  - pattern: ^(?P<container>[^/]+)/(?P<owner>[^/]+)/(?P<dataset>[^/]+)

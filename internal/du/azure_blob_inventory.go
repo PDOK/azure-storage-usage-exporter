@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -68,6 +70,22 @@ func (ar *AzureBlobInventoryReportDuReader) TestConnection() error {
 	pager := blobClient.NewListBlobsFlatPager(ar.config.BlobInventoryContainer, &azblob.ListBlobsFlatOptions{MaxResults: int32Ptr(1)})
 	_, err = pager.NextPage(context.TODO())
 	return err
+}
+
+func (ar *AzureBlobInventoryReportDuReader) GetStorageAccountName() string {
+	// github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/shared/ParseConnectionString is unfortunately internal
+	if match := regexp.MustCompile(`AccountName=([^;]+)`).FindStringSubmatch(ar.config.AzureStorageConnectionString); len(match) == 2 {
+		return match[1]
+	}
+	if match := regexp.MustCompile(`BlobEndpoint=([^;]+)`).FindStringSubmatch(ar.config.AzureStorageConnectionString); len(match) == 2 {
+		if blobEndpoint, err := url.Parse(match[1]); blobEndpoint != nil && err != nil {
+			if blobEndpoint.Path != "" {
+				return blobEndpoint.Path
+			}
+			return regexp.MustCompile(`^[^.]+`).FindString(blobEndpoint.Host)
+		}
+	}
+	return "_unknown"
 }
 
 func (ar *AzureBlobInventoryReportDuReader) Read(previousRunDate time.Time) (time.Time, <-chan Row, <-chan error, error) {
