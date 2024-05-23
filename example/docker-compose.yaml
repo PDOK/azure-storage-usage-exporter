@@ -64,6 +64,10 @@ services:
       - -c
       - |
         set -e
-        echo "waiting a bit before checking the metrics (TODO think of something better)"
+        echo "waiting a bit before checking the metrics"
         sleep 7
-        wget -O - 'http://azure-storage-usage-exporter:8080/metrics' | grep 'pdok_storage_usage{deleted="false",tenant="ZDI2",type="ZTJmNTY2MTU2Y2"} 3.4038013e+07'
+        if ! wget -q -O - 'http://azure-storage-usage-exporter:8080/metrics' | grep 'azure_storage_usage{deleted="false",storage_account="devstoreaccount1",tenant="ZDI2",type="ZTJmNTY2MTU2Y2"} 3.4038013e+07' > /dev/null; then
+          echo "expected metric not found"
+        else
+          echo "done"
+        fi

@@ -15,16 +15,16 @@ The goal is to expose stats about storage/disk usage (not transactions) per Azur
 ## Example metrics output
 
 ```text
-# HELP pdok_storage_lastRunDateMetric 
-# TYPE pdok_storage_lastRunDateMetric gauge
-pdok_storage_lastRunDateMetric 1.716122623e+09
+# HELP azure_storage_last_run_date
+# TYPE azure_storage_last_run_date gauge
+azure_storage_last_run_date 1.716122623e+09
 # HELP pdok_storage_usage 
 # TYPE pdok_storage_usage gauge
-pdok_storage_usage{container="blob-inventory",dataset="other",deleted="false",owner="other"} 1.4511800263e+10
-pdok_storage_usage{container="blob-inventory",dataset="other",deleted="true",owner="other"} 1.4697209865e+10
-pdok_storage_usage{container="deliveries",dataset="something",deleted="false",owner="someone"} 1.4624738e+07
-pdok_storage_usage{container="deliveries",dataset="something",deleted="true",owner="someone"} 2.0263731e+07
-pdok_storage_usage{container="deliveries",dataset="somethingelse",deleted="false",owner="someoneelse"} 1.8042443e+07
+azure_storage_usage{container="blob-inventory",dataset="other",deleted="false",owner="other",storage_account="devstoreaccount1"} 1.4511800263e+10
+azure_storage_usage{container="blob-inventory",dataset="other",deleted="true",owner="other",storage_account="devstoreaccount1"} 1.4697209865e+10
+azure_storage_usage{container="deliveries",dataset="something",deleted="false",owner="someone",storage_account="devstoreaccount1"} 1.4624738e+07
+azure_storage_usage{container="deliveries",dataset="something",deleted="true",owner="someone",storage_account="devstoreaccount1"} 2.0263731e+07
+azure_storage_usage{container="deliveries",dataset="somethingelse",deleted="false",owner="someoneelse",storage_account="devstoreaccount1"} 1.8042443e+07
 # .....
 ```
 
