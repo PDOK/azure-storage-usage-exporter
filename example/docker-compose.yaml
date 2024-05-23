@@ -29,7 +29,14 @@ services:
       - sh
       - -c
       - |
-        rclone copy -vv /example/blob-inventory blobs:blob-inventory
+        set -e
+        rclone copy /example/blob-inventory blobs:blob-inventory
+        touch /tmp/finished
+        sleep 300 # because docker-compose --exit-code-from implies --abort-on-container-exit
+    healthcheck:
+      test: stat /tmp/finished
+      interval: 1s
+      retries: 30
 
   azure-storage-usage-exporter:
     image: azure-storage-usage-exporter:local  # run local image if available (used in CI)
@@ -43,7 +50,7 @@ services:
       CONFIG: /example/config.yaml
     depends_on:
       azurite-seed:
-        condition: service_completed_successfully
+        condition: service_healthy
     ports:
       - "8080:8080"
 
@@ -57,6 +64,6 @@ services:
       - -c
       - |
         set -e
-        echo "test metrics"
-        sleep 20 # TODO think of something better
+        echo "waiting a bit before checking the metrics (TODO think of something better)"
+        sleep 7
         wget -O - 'http://azure-storage-usage-exporter:8080/metrics' | grep 'pdok_storage_usage{deleted="false",tenant="ZDI2",type="ZTJmNTY2MTU2Y2"} 3.4038013e+07'
