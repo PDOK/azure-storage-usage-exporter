@@ -1,4 +1,4 @@
-# PDOK storage usage exporter
+# Azure storage usage exporter
 
 [![Build](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/build-and-publish-image.yml/badge.svg)](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/build-and-publish-image.yml)
 [![Lint (go)](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/lint-go.yml/badge.svg)](https://github.com/PDOK/azure-storage-usage-exporter/actions/workflows/lint-go.yml)
@@ -7,18 +7,26 @@
 [![GitHub license](https://img.shields.io/github/license/PDOK/azure-storage-usage-exporter)](https://github.com/PDOK/azure-storage-usage-exporter/blob/master/LICENSE)
 [![Docker Pulls](https://img.shields.io/docker/pulls/pdok/azure-storage-usage-exporter.svg)](https://hub.docker.com/r/pdok/azure-storage-usage-exporter)
 
-This app generates and exports/exposes statistics about cloud storage usage.
-It is tailored to PDOK's use case:
+This Prometheus exporter exposes statistics about [Azure Blob storage](https://azure.microsoft.com/en-us/products/storage/blobs) usage.
+It relies upon data from [Azure Storage blob inventory reports](https://learn.microsoft.com/en-us/azure/storage/blobs/blob-inventory).
+This data is aggregated, matched against configured labels and exposed as a Prometheus metrics endpoint.
+The goal is to expose stats about storage/disk usage (not transactions) per Azure Blob container/directory/prefix.
 
-* The cloud storage is [Azure Blob storage](https://azure.microsoft.com/en-us/products/storage/blobs). 
-* Usage concerns (current) occupation, not transactions.
-* The aggregation groups are: container, owner and dataset.
+## Example metrics output
 
-It does so by:
-
-* Periodically aggregating an [Azure Storage blob inventory report](https://learn.microsoft.com/en-us/azure/storage/blobs/blob-inventory).
-* Applying rules about which container/directory/prefix applies to which dataset and owner combo.
-* Exposing the results in a prometheus endpoint.
+```text
+# HELP pdok_storage_lastRunDateMetric 
+# TYPE pdok_storage_lastRunDateMetric gauge
+pdok_storage_lastRunDateMetric 1.716122623e+09
+# HELP pdok_storage_usage 
+# TYPE pdok_storage_usage gauge
+pdok_storage_usage{container="blob-inventory",dataset="other",deleted="false",owner="other"} 1.4511800263e+10
+pdok_storage_usage{container="blob-inventory",dataset="other",deleted="true",owner="other"} 1.4697209865e+10
+pdok_storage_usage{container="deliveries",dataset="something",deleted="false",owner="someone"} 1.4624738e+07
+pdok_storage_usage{container="deliveries",dataset="something",deleted="true",owner="someone"} 2.0263731e+07
+pdok_storage_usage{container="deliveries",dataset="somethingelse",deleted="false",owner="someoneelse"} 1.8042443e+07
+# .....
+```
 
 ## Build
 
@@ -28,17 +36,43 @@ docker build .
 
 ## Run
 
-ToDo
+```text
+USAGE:
+   azure-storage-usage-exporter [global options] command [command options] 
 
-### Configuration file
+COMMANDS:
+   help, h  Shows a list of commands or help for one command
 
-ToDo
+GLOBAL OPTIONS:
+   --azure-storage-connection-string value  Connection string for connecting to the Azure blob storage that holds the inventory (overrides the config file entry) [$AZURE_STORAGE_CONNECTION_STRING]
+   --bind-address value                     The TCP network address addr that is listened on. (default: ":8080") [$BIND_ADDRESS]
+   --config value                           Config file with aggregation labels and rules [$CONFIG]
+   --help, -h                               show help
+```
 
-### Observability
+### Config file
 
-#### Health checks
+Example config file:
 
-Health endpoint is available on `/health`.
+```yaml
+azure:
+  azureStorageConnectionString: DefaultEndpointsProtocol=http;BlobEndpoint=http://localhost:10000/devstoreaccount1;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;
+  blobInventoryContainer: blob-inventory
+  maxMemory: 1GB
+  threads: 4
+metrics:
+  metricNamespace: pdok
+  metricSubsystem: storage
+  limit: 1000
+labels: # labels that are used in each metric and their default values
+  type: other
+  tenant: other
+rules: # rules are tried in order until a pattern matches
+  - pattern: ^strange-dir/(?P<tenant>[^/]+)/.+
+    labels: # static labels that don't get their values from the regex 
+      - type: special
+  - pattern: ^(?P<type>[^/]+)/(?P<tenant>[^/]+)/.+
+```
 
 ### Linting
 

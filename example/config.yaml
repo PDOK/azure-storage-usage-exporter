@@ -1,0 +1,10 @@
+---
+azure: {}
+labels:
+  type: other
+  tenant: other
+rules:
+  - pattern: ^(?P<type>Y2U0ZWI1Zjc3OD|NTg0NmRjZmUwNW|YTAzZTI1ZWE2NT)(/|$)
+    labels:
+      tenant: special
+  - pattern: ^(?P<type>[^/]+)/(?P<tenant>[^/]+)

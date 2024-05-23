@@ -1,0 +1,69 @@
+---
+version: "3"
+
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.29.0
+    container_name: "azurite"
+    hostname: azurite
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
+    ports:
+      - "10000:10000"
+    healthcheck:
+      test: nc 127.0.0.1 10000 -z
+      interval: 1s
+      retries: 30
+
+  azurite-seed:
+    image: rclone/rclone:1.65
+    depends_on:
+      azurite:
+        condition: service_healthy
+    volumes:
+      - ./:/example
+    environment:
+      - RCLONE_CONFIG_BLOBS_TYPE=azureblob
+      - RCLONE_CONFIG_BLOBS_ENDPOINT=http://azurite:10000/devstoreaccount1
+      - RCLONE_CONFIG_BLOBS_USE_EMULATOR=true
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        rclone copy /example/blob-inventory blobs:blob-inventory
+        touch /tmp/finished
+        sleep 300 # because docker-compose --exit-code-from implies --abort-on-container-exit
+    healthcheck:
+      test: stat /tmp/finished
+      interval: 1s
+      retries: 30
+
+  azure-storage-usage-exporter:
+    image: azure-storage-usage-exporter:local  # run local image if available (used in CI)
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    volumes:
+      - ./:/example
+    environment:
+      AZURE_STORAGE_CONNECTION_STRING: DefaultEndpointsProtocol=http;BlobEndpoint=http://azurite:10000/devstoreaccount1;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;
+      CONFIG: /example/config.yaml
+    depends_on:
+      azurite-seed:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  smoketest:
+    image: busybox
+    depends_on:
+      azure-storage-usage-exporter:
+        condition: service_started
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "waiting a bit before checking the metrics (TODO think of something better)"
+        sleep 7
+        wget -O - 'http://azure-storage-usage-exporter:8080/metrics' | grep 'pdok_storage_usage{deleted="false",tenant="ZDI2",type="ZTJmNTY2MTU2Y2"} 3.4038013e+07'
