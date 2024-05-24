@@ -71,6 +71,10 @@ func (a *Aggregator) GetLabelNames() []string {
 	return keys
 }
 
+func (a *Aggregator) GetStorageAccountName() string {
+	return a.labelsWithDefaults[StorageAccount]
+}
+
 func (a *Aggregator) Aggregate(previousRunDate time.Time) (aggregationResults []AggregationResult, runDate time.Time, err error) {
 	log.Print("starting aggregation")
 	runDate, rowsCh, errCh, err := a.duReader.Read(previousRunDate)
