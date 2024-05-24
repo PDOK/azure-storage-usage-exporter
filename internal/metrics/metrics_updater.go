@@ -41,20 +41,28 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 func NewUpdater(aggregator *agg.Aggregator, config Config) *Updater {
+	// promauto automatically registers with prometheus.DefaultRegisterer
+	storageUsageGauge := promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: config.MetricNamespace,
+		Subsystem: config.MetricSubsystem,
+		Name:      "usage",
+	}, aggregator.GetLabelNames())
+	lastRunDateMetricLabels := prometheus.Labels{}
+	storageAccountName := aggregator.GetStorageAccountName()
+	if storageAccountName != "" {
+		lastRunDateMetricLabels[agg.StorageAccount] = storageAccountName
+	}
+	lastRunDateMetric := promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace:   config.MetricNamespace,
+		Subsystem:   config.MetricSubsystem,
+		Name:        "last_run_date",
+		ConstLabels: lastRunDateMetricLabels,
+	})
 	return &Updater{
-		config:     config,
-		aggregator: aggregator,
-		// promauto automatically registers with prometheus.DefaultRegisterer
-		storageUsageGauge: promauto.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: config.MetricNamespace,
-			Subsystem: config.MetricSubsystem,
-			Name:      "usage",
-		}, aggregator.GetLabelNames()),
-		lastRunDateMetric: promauto.NewGauge(prometheus.GaugeOpts{
-			Namespace: config.MetricNamespace,
-			Subsystem: config.MetricSubsystem,
-			Name:      "last_run_date",
-		}),
+		config:            config,
+		aggregator:        aggregator,
+		storageUsageGauge: storageUsageGauge,
+		lastRunDateMetric: lastRunDateMetric,
 	}
 }
 
