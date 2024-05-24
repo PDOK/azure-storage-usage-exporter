@@ -16,6 +16,11 @@ RUN go build -v -a -o /azure-storage-usage-exporter github.com/PDOK/azure-storag
 
 FROM docker.io/debian:bookworm-slim
 
+RUN set -eux && \
+    apt-get update && \
+    apt-get install -y libcurl4 curl openssl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /tmp
 RUN usermod -d /tmp nobody
 
