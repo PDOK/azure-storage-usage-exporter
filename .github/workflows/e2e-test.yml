@@ -18,10 +18,11 @@ jobs:
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker
+          driver-opts: network=host
       - name: Build test image
         uses: docker/build-push-action@v6
         with:
-          push: false
+          push: true
           tags: localhost:5000/azure-storage-usage-exporter:local
 
       # E2E Test
