@@ -22,7 +22,7 @@ jobs:
       # E2E Test
       - name: E2E Test
         run: |
-          docker-compose -f ./example/docker-compose.yaml pull \
+          docker compose -f ./example/docker-compose.yaml pull \
           && \
-          docker-compose -f ./example/docker-compose.yaml up \
+          docker compose -f ./example/docker-compose.yaml up \
             --no-build --exit-code-from smoketest
