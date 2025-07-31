@@ -9,12 +9,12 @@ jobs:
       - uses: actions/checkout@v3
 
       # Build a local test image for re-use across end-to-end tests
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker
+#      - name: Set up Docker Buildx
+#        uses: docker/setup-buildx-action@v3
+#        with:
+#          driver: docker
       - name: Build test image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           push: false
           tags: azure-storage-usage-exporter:local
