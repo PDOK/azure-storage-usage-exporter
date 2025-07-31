@@ -5,19 +5,25 @@ on:
 jobs:
   end-to-end-test:
     runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v3
 
       # Build a local test image for re-use across end-to-end tests
-#      - name: Set up Docker Buildx
-#        uses: docker/setup-buildx-action@v3
-#        with:
-#          driver: docker
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
       - name: Build test image
         uses: docker/build-push-action@v6
         with:
+          context: "{{defaultContext}}:base"
           push: false
-          tags: azure-storage-usage-exporter:local
+          tags: localhost:5000/azure-storage-usage-exporter:local
 
       # E2E Test
       - name: E2E Test
