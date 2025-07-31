@@ -1,6 +1,6 @@
 module github.com/PDOK/azure-storage-usage-exporter
 
-go 1.22
+go 1.24
 
 require github.com/urfave/cli/v2 v2.27.2
 

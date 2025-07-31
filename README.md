@@ -12,7 +12,7 @@ It relies upon data from [Azure Storage blob inventory reports](https://learn.mi
 This data is aggregated, matched against configured labels and exposed as a Prometheus metrics endpoint.
 The goal is to expose stats about storage/disk usage (not transactions) per Azure Blob container/directory/prefix.
 
-## Example metrics output
+## Example metrics output 
 
 ```text
 # HELP azure_storage_last_run_date

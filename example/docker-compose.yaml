@@ -39,7 +39,7 @@ services:
       retries: 30
 
   azure-storage-usage-exporter:
-    image: azure-storage-usage-exporter:local  # run local image if available (used in CI)
+    image: localhost:5000/azure-storage-usage-exporter:local  # run local image if available (used in CI)
     build:
       context: ../
       dockerfile: Dockerfile
